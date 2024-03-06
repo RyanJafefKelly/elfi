@@ -1,0 +1,5 @@
+got massive tif file directly in folder ... not ideal
+Need to convert to .txt for whatever the hell I was doing earlier
+
+Main Goal: Get working little owls for BSL
+Mini-goals: load file, get running to BSL stage, all files accounted for
