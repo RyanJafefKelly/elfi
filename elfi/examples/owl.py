@@ -6,7 +6,7 @@ import warnings
 import numpy as np
 # from numpyctypes import c_ndarray
 from sklearn.linear_model import LinearRegression, QuantileRegressor
-# import rasterio
+import rasterio
 from numpyctypes import c_ndarray
 import ctypes
 # from contextlib import redirect_stdout
@@ -21,18 +21,19 @@ import time
 # import uuid
 
 # TODO: yucky global stuff
-# dat = np.zeros((15092, 16730))
-# i = 0
-# with rasterio.open("habitatSuitability_scaled_20.tif") as src:
-#     profile = src.profile.copy()
-#     print(src.profile)
-#     for ji, window in src.block_windows(1):
-#         window_dat = src.read(window=window)
-#         window_dat[np.where(window_dat < 0)] = 0
-#         dat[:, i] = window_dat.flatten()
-#         i += 1
+dat = np.zeros((15092, 16730))
+i = 0
+with rasterio.open("habitatSuitability_scaled_20.tif") as src:
+    profile = src.profile.copy()
+    print(src.profile)
+    for ji, window in src.block_windows(1):
+        window_dat = src.read(window=window)
+        window_dat[np.where(window_dat < 0)] = 0
+        dat[:, i] = window_dat.flatten()
+        i += 1
 
-dat = np.loadtxt("habsuitcalib_new.txt")
+# TODO: really need to sort out this ugly global shit ...
+# dat = np.loadtxt("habsuitcalib_new.txt")
 # dat = np.transpose(dat)  # TODO! TESTING
 # dat = np.ones((5829, 6489))
 
@@ -196,7 +197,7 @@ def owl(k, lmda_r, rho, tau, batch_size=1, random_state=None, **kwargs):
     tic = time.time()
 
     # with open(filename, 'w') as f, redirect_stdout(f):
-    func = lib.run_sim
+    func = lib.run_sim_wrapper
     # environment_dummy = np.zeros((100, 100))
     # environment_dummy_c = c_ndarray(environment_dummy, dtype=np.double, ndim=2)
     func.restype = ctypes.POINTER(ctypes.c_double * 2048)
@@ -212,7 +213,7 @@ def owl(k, lmda_r, rho, tau, batch_size=1, random_state=None, **kwargs):
 
     # TODO! TRANSLATE SPATIAL CO-ORDS / ANYTHING ELSE RELEVANT
 
-    res = lib.run_sim(ctypes.c_double(rho), ctypes.c_double(k), ctypes.c_double(tau),
+    res = lib.run_sim_wrapper_wrapper(ctypes.c_double(rho), ctypes.c_double(k), ctypes.c_double(tau),
                     ctypes.c_double(lmda_r), env_res, ctypes.c_double(s_time), s_day,
                     ctypes.c_double(sol_lat), ctypes.c_double(sol_long),
                     ctypes.c_double(observation_error),
@@ -284,7 +285,7 @@ def owl_batch(k, lmda_r, rho, tau, batch_size=1, meta=None, random_state=None, *
     tic = time.time()
 
     # with open(filename, 'w') as f, redirect_stdout(f):
-    func = lib.run_sim
+    func = lib.run_sim_wrapper
     # environment_dummy = np.zeros((100, 100))
     # environment_dummy_c = c_ndarray(environment_dummy, dtype=np.double, ndim=2)
     func.restype = ctypes.POINTER(ctypes.c_double * 2048)
@@ -296,14 +297,17 @@ def owl_batch(k, lmda_r, rho, tau, batch_size=1, meta=None, random_state=None, *
             seed = random_state.randint(0, 1e+9)
         # TODO! HARDCODED OBSERVATION ERROR FROM AccMetric R - LOSIM/code/calibrationScript.R
         observation_error = 2.4
-        res = lib.run_sim(ctypes.c_double(rho), ctypes.c_double(k), ctypes.c_double(tau),
+        res = lib.run_sim_wrapper(ctypes.c_double(rho), ctypes.c_double(k), ctypes.c_double(tau),
                         ctypes.c_double(lmda_r), env_res, ctypes.c_double(s_time), s_day,
                         ctypes.c_double(sol_lat), ctypes.c_double(sol_long),
                         ctypes.c_double(observation_error),
                         upper_left_left, upper_left_top,
                         ctypes.c_ulonglong(seed), times_c,
                         environment_c)
-        np_res = np.array([el for el in res.contents])
+        try:
+            np_res = np.array([el for el in res.contents])
+        except ValueError as e:
+            np_res = np.ones(2048)
         np_res = np_res[:(7 * len(times))]  # trim down from 2048 to actual data
         np_res = np_res.reshape((-1, 7))
         res_all.append(np_res)
@@ -326,6 +330,8 @@ def owl_batch(k, lmda_r, rho, tau, batch_size=1, meta=None, random_state=None, *
 
 
 def summary_stats(*x):
+    if np.allclose(x, 1):
+        return -1.0 * np.ones(31)
     x = np.array(x).reshape((-1, 7))
     timestamp = x[:, 0]
     x_observed = x[:, 1]
@@ -564,8 +570,7 @@ def summary_stats_batch(sims):
     return ssx_all
 
 
-def get_model(true_params=None, seed_obs=None, upper_left=None, parallelise=True,
-              num_processes=4, observed=False):
+def get_model(true_params=None, seed_obs=None, upper_left=None, observed=False):
     """Return the model in ..."""
     # NOTE: default params arbitrarily chosen
     rho = 2
@@ -575,11 +580,10 @@ def get_model(true_params=None, seed_obs=None, upper_left=None, parallelise=True
     if true_params is None:
         true_params = [k, lmda_r, rho, tau]
 
-    sim_fn = owl
-    summary_fn = summary_stats_parallel
-    if not parallelise:
-        sim_fn = owl_batch
-        summary_fn = summary_stats_batch
+    # sim_fn = owl
+    # summary_fn = summary_stats_parallel
+    sim_fn = owl_batch
+    summary_fn = summary_stats_batch
 
     if observed:
         y = pd.read_csv("individual_data/individual_data/calibration_2011VA0533_data.csv",
@@ -602,13 +606,14 @@ def get_model(true_params=None, seed_obs=None, upper_left=None, parallelise=True
     # Simulator
     elfi.Simulator(sim_fn, m['k'], m['lmda_r'], m['rho'], m['tau'],
                    observed=y,
-                   name='OWL', parallelise=parallelise,
-                   num_processes=num_processes)
-    m['OWL'].uses_meta = True
+                   name='OWL')
+    # m['OWL'].uses_meta = True
 
     # Summary
     elfi.Summary(summary_fn, m['OWL'], name='S')
 
     # Synthetic Likelihood
-    elfi.SyntheticLikelihood('semibsl', m['S'], name='SL')
+    # elfi.SyntheticLikelihood('semibsl', m['S'], name='SL')
+    elfi.Distance('euclidean', m['S'], name='d')
+    elfi.AdaptiveDistance('euclidean', m['S'], name='d_adapt')
     return m
