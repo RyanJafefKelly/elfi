@@ -37,10 +37,13 @@ def run_owl():
 
     # NOTE: could do presampling stuff here
 
+    # TODO: how many simulations to run?
+    # TODO: what does the distribution look like?
+
     likelihood = pdf_methods.semiparametric_likelihood()
 
-    n_sim_round = 50
-    batch_size = 50
+    n_sim_round = 300
+    batch_size = 300
     semi_bsl = elfi.BSL(m, n_sim_round=n_sim_round,
                         batch_size=batch_size, seed=123, likelihood=likelihood)
 
@@ -48,21 +51,21 @@ def run_owl():
     k = 1.5
     tau = 1.0
     lmda_r = 5.0
-    params = {'rho': rho, 'k': k, 'tau': tau, 'lmda_r': lmda_r}
+    params = {'k': k, 'lmda_r': lmda_r, 'rho': rho, 'tau': tau}
 
-    mcmc_iterations = 200  # sample size
+    mcmc_iterations = 2000  # sample size
     est_post_cov = np.array([[0.02, 0.01], [0.01, 0.02]])  # covariance matrix for the proposal distribution
     logit_transform_bound = np.array([
-                                    [0.1, 4],
-                                    [0.01, 30],
-                                    [0.1, 5],
-                                    [0.1, 3.5]
+                                    [0.1, 4],  # k
+                                    [0.01, 30],  # lmdr_r
+                                    [0.1, 5],  # rho
+                                    [0.1, 3.5]  # tau
                                    ])
 
     res = semi_bsl.sample(mcmc_iterations,
                           sigma_proposals=0.1*np.eye(4),
-                          params0=np.array([rho, k, tau, lmda_r]),
-                          param_names=['rho', 'k', 'tau', 'lmda_r'],
+                          params0=np.array([k, lmda_r, rho, tau]),
+                          param_names=['k', 'lmda_r', 'rho', 'tau'],
                           logit_transform_bound=logit_transform_bound,
                           )
 
@@ -71,7 +74,8 @@ def run_owl():
     res.plot_traces();
     plt.savefig("owl_traces.png")
 
-    res.plot_pairs(reference_values=params, bins=30);
+    res.plot_pairs(reference_values=params,
+                   bins=30);
     plt.savefig("owl_pairs.png")
     # owl_bsl_sampler = elfi.BSL(m['SL'], batch_size=batch_size, seed=123)
 
