@@ -31,7 +31,6 @@ def run_owl():
 
     # true_params = np.array([2, 1.5, 1, 5])  # TODO
     m = owl.get_model(seed_obs=123, observed=False)
-    batch_size = 50
 
     feature_names = 'S'
 
@@ -53,7 +52,7 @@ def run_owl():
     lmda_r = 5.0
     params = {'k': k, 'lmda_r': lmda_r, 'rho': rho, 'tau': tau}
 
-    mcmc_iterations = 2000  # sample size
+    mcmc_iterations = 200  # sample size
     est_post_cov = np.array([[0.02, 0.01], [0.01, 0.02]])  # covariance matrix for the proposal distribution
     logit_transform_bound = np.array([
                                     [0.1, 4],  # k
@@ -63,7 +62,7 @@ def run_owl():
                                    ])
 
     res = semi_bsl.sample(mcmc_iterations,
-                          sigma_proposals=0.1*np.eye(4),
+                          sigma_proposals=0.01*np.eye(4),
                           params0=np.array([k, lmda_r, rho, tau]),
                           param_names=['k', 'lmda_r', 'rho', 'tau'],
                           logit_transform_bound=logit_transform_bound,
