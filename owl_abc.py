@@ -4,7 +4,10 @@ import elfi
 import matplotlib.pyplot as plt
 from elfi.examples import owl
 from elfi.methods.bsl import pre_sample_methods, pdf_methods
+from elfi.clients.multiprocessing import Client as MultiprocessingClient
 from ctypes import cdll
+import multiprocessing as mp
+import pickle as pkl
 
 # import rasterio
 import pandas as pd
@@ -30,14 +33,40 @@ def run_owl():
     ind_data_centroid = pd.read_csv("individual_data/individual_data/calibration_2011VA0533_centroid.csv")
 
     # true_params = np.array([2, 1.5, 1, 5])  # TODO
+    # elfi.set_client(MultiprocessingClient(num_processes=4))
+
     m = owl.get_model(seed_obs=123, observed=False)
 
-    rej = elfi.Rejection(m['d'], batch_size=1, seed=123)
+    # rej = elfi.Rejection(m['d'], batch_size=1, seed=123)
+    # schedule = [2.0e+3, 5e+2, 1e+2]
+    smc_abc = elfi.AdaptiveThresholdSMC(m['d'], batch_size=1, seed=123, q_threshold=0.995)
+
     tic = time.time()
-    res = rej.sample(n_samples=100, quantile=0.01)
+    sample_smc_abc = smc_abc.sample(200, max_iter=2)
     toc = time.time()
-    print("Rejection sampling time: ", toc - tic)
-    print(res)
+    print("SMC ABC sampling time: ", toc - tic)
+    print(sample_smc_abc)
+    # print(sample_smc_abc.compute_ess())
+
+    with open("owl_smc_abc.pkl", "wb") as f:
+        pkl.dump(sample_smc_abc, f)
+
+    # sample_smc_abc.plot_traces()
+    # plt.savefig("owl_traces.png")
+
+    rho = 2.0
+    k = 1.5
+    tau = 1.0
+    lmda_r = 5.0
+
+    params = {'k': k, 'lmda_r': lmda_r, 'rho': rho, 'tau': tau}
+
+    sample_smc_abc.plot_marginals(reference_values=params,
+                   bins=30)
+
+    sample_smc_abc.plot_pairs(reference_values=params,
+                   bins=30)
+    plt.savefig("owl_pairs.png")
 
 if __name__ == '__main__':
     run_owl()

@@ -223,7 +223,6 @@ def owl(k, lmda_r, rho, tau, batch_size=1, random_state=None, **kwargs):
     np_res = np.array([el for el in res.contents])
     np_res = np_res[:(7 * len(times))]  # trim down from 2048 to actual data
     np_res = np_res.reshape((-1, 7))
-    toc = time.time()
     # print("time: ", toc - tic)
     return np_res
 
