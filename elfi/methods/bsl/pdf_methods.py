@@ -230,12 +230,13 @@ def semi_param_kernel_estimate(ssx, ssy, shrinkage=None, penalty=None, whitening
         y_u[j] = min(1, y_u[j])  # fix numerical errors, CDF values cannot exceed 1
 
         if whitening is not None:
-            # TODO? Commented out very inefficient for large simulation count
             # sim_eta[:, j] = [ss.norm.ppf(kernel.integrate_box_1d(np.NINF,
             #                                                      ssx_i))
             #                  for ssx_i in ssx_j]
             sim_eta[:, j] = ss.norm.ppf(ss.rankdata(ssx_j)/(n+1))
-
+    # Below is exit point for helper function for estimate_whitening_matrix
+    if not hasattr(whitening, 'shape') and whitening == "whitening":
+        return sim_eta
     rho_hat = grc(ssx)
 
     if whitening is not None:
@@ -269,12 +270,20 @@ def syn_likelihood_misspec(ssx, ssy, gamma, adjustment):
 
     Uses mean or variance adjustment to compensate for model misspecification.
 
+<<<<<<< Updated upstream
     References
     ----------
     D. T. Frazier and C. Drovandi (2019).
     Robust Approximate Bayesian Inference with Synthetic Likelihood,
     J. Computational and Graphical Statistics, 30(4), 958-976.
     https://doi.org/10.1080/10618600.2021.1875839
+=======
+def syn_likelihood_misspec(self, *ssx, adjustment="variance", tau=0.5,
+                           penalty=None, whitening=None, observed=None,
+                           gamma=None, curr_loglik=None, prev_std=None,
+                           **kwargs):
+    """Calculate the posterior logpdf using the standard synthetic likelihood.
+>>>>>>> Stashed changes
 
     Parameters
     ----------
