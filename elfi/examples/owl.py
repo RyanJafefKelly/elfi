@@ -136,6 +136,8 @@ def prepare_inputs(*inputs, **kwinputs):
     kwinputs['filename'] = filename
     kwinputs['output_filename'] = filename[:-4] + '_out.txt'
 
+    kwinputs['batch_size'] = 1 if 'batch_size' not in kwinputs else kwinputs['batch_size']
+
     return inputs, kwinputs
 
 
@@ -168,10 +170,23 @@ def process_result(completed_process, *inputs, **kwinputs):
 # TODO: add seed, etc.
 
 def invoke_simulation(*inputs, **kwinputs):
+    # NOTE: a bit dodgy...
+    k, lmda_r, rho, tau = inputs
+    if hasattr(rho, '__len__') and len(rho) > 1:
+        rho = rho[0]
+        k = k[0]
+        tau = tau[0]
+        lmda_r = lmda_r[0]
+    else:  # assumes something array like passed
+        pass
+        # rho = rho[0]
+        # k = k[0]
+        # tau = tau[0]
+        # lmda_r = lmda_r[0]
+
     lib = ctypes.cdll.LoadLibrary('./runsim.so')
     lib.run_sim_wrapper.restype = ctypes.c_int
 
-    k, lmda_r, rho, tau = inputs
     # Retrieve inputs and convert to ctypes as needed
     env_res = 20
     environment_c, s_time, s_day, sol_lat, sol_long, observation_error = \
@@ -183,8 +198,8 @@ def invoke_simulation(*inputs, **kwinputs):
                                                      kwinputs['times']
     times_c = c_ndarray(times, dtype=np.uintc, ndim=1)
     # Perform the call to the shared library function
-    batch_size = 1  # TODO
-    random_state = np.random  # TODO
+    batch_size = kwinputs['batch_size']
+    random_state = np.random
 
     # Prepare the result array
     result_size = 2048  # Must match the expected size
