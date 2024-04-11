@@ -15,7 +15,7 @@ from functools import partial
 
 from scipy.stats import skew
 from scipy.spatial import ConvexHull
-from scipy.spatial.distance import  
+from scipy.spatial.distance import pdist
 import elfi
 import pandas as pd
 import time
