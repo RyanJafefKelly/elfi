@@ -42,7 +42,7 @@ def run_owl():
     smc_abc = elfi.AdaptiveThresholdSMC(m['d'], batch_size=1, seed=123, q_threshold=0.995)
 
     tic = time.time()
-    sample_smc_abc = smc_abc.sample(200, max_iter=2)
+    sample_smc_abc = smc_abc.sample(2000, max_iter=5)
     toc = time.time()
     print("SMC ABC sampling time: ", toc - tic)
     print(sample_smc_abc)

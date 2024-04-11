@@ -34,7 +34,7 @@ def run_owl():
 
     # true_params = np.array([2, 1.5, 1, 5])  # TODO
 
-    elfi.set_client(MultiprocessingClient(num_processes=6))  # TODO: Hardcoded
+    # elfi.set_client(MultiprocessingClient(num_processes=6))  # TODO: Hardcoded
 
 
     m = owl.get_model(seed_obs=123, observed=False)
@@ -49,7 +49,7 @@ def run_owl():
     likelihood = pdf_methods.semiparametric_likelihood()
 
     n_sim_round = 300
-    # batch_size = 300
+    batch_size = 50
     semi_bsl = elfi.BSL(m, n_sim_round=n_sim_round,
                         batch_size=batch_size, seed=123, likelihood=likelihood)
 
@@ -59,8 +59,7 @@ def run_owl():
     lmda_r = 5.0
     params = {'k': k, 'lmda_r': lmda_r, 'rho': rho, 'tau': tau}
 
-    mcmc_iterations = 200  # sample size
-    est_post_cov = np.array([[0.02, 0.01], [0.01, 0.02]])  # covariance matrix for the proposal distribution
+    mcmc_iterations = 100  # sample size
     logit_transform_bound = np.array([
                                     [0.1, 4],  # k
                                     [0.01, 30],  # lmdr_r
