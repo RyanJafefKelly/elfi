@@ -20,6 +20,7 @@ import time
 logger = logging.getLogger(__name__)
 
 def run_owl():
+    np.random.seed(123)
     logs_dir = 'logs'
 
     # Check if the directory exists
@@ -52,7 +53,7 @@ def run_owl():
     n_sim_round = 300
     # batch_size = 300
     semi_bsl = elfi.BSL(m, n_sim_round=n_sim_round,
-                        batch_size=batch_size, seed=123, likelihood=likelihood)
+                        batch_size=batch_size, seed=1, likelihood=likelihood)
 
     rho = 2.0
     k = 1.5
@@ -60,7 +61,7 @@ def run_owl():
     lmda_r = 5.0
     params = {'k': k, 'lmda_r': lmda_r, 'rho': rho, 'tau': tau}
 
-    mcmc_iterations = 20  # sample size
+    mcmc_iterations = 200  # sample size
     est_post_cov = np.array([[0.02, 0.01], [0.01, 0.02]])  # covariance matrix for the proposal distribution
     logit_transform_bound = np.array([
                                     [0.1, 4],  # k
@@ -69,19 +70,31 @@ def run_owl():
                                     [0.1, 3.5]  # tau
                                    ])
 
+    # TODO! DOUBLE CHECK ROWS MATCH UP WITH BOUNDS
     sigma_proposals = np.array([[ 1.82484162,  0.04122204, -0.22807996, -0.05305404],
        [ 0.04122204,  3.41680703, -0.15229068,  0.17158555],
        [-0.22807996, -0.15229068,  2.46904036,  0.0493929 ],
        [-0.05305404,  0.17158555,  0.0493929 ,  2.54673614]])
 
 
+    # pre-sampling
+    # check summary statistics shape
+    nsim = 10000
+    seed = 1
+    # pre_sample_methods.plot_features(m, params, nsim, feature_names, seed=seed)
+    # plt.savefig("owl_features.png")
+
+    # TODO: should also check log SL stdev
+
+    tic = time.time()
     res = semi_bsl.sample(mcmc_iterations,
                           sigma_proposals=sigma_proposals,  # TODO: check if works with transform...
                           params0=np.array([k, lmda_r, rho, tau]),
                           param_names=['k', 'lmda_r', 'rho', 'tau'],
                           logit_transform_bound=logit_transform_bound,
                           )
-
+    toc = time.time()
+    print("BSL sampling time: ", toc - tic)
     print(res)
     with open("owl_semibsl.pkl", "wb") as f:
         pkl.dump(res, f)
