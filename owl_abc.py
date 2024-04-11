@@ -19,6 +19,7 @@ import time
 
 logger = logging.getLogger(__name__)
 
+
 def run_owl():
     logs_dir = 'logs'
 
@@ -33,7 +34,7 @@ def run_owl():
     ind_data_centroid = pd.read_csv("individual_data/individual_data/calibration_2011VA0533_centroid.csv")
 
     # true_params = np.array([2, 1.5, 1, 5])  # TODO
-    # elfi.set_client(MultiprocessingClient(num_processes=4))
+    elfi.set_client(MultiprocessingClient(num_processes=4))
 
     m = owl.get_model(seed_obs=123, observed=False)
 
@@ -62,10 +63,10 @@ def run_owl():
     params = {'k': k, 'lmda_r': lmda_r, 'rho': rho, 'tau': tau}
 
     sample_smc_abc.plot_marginals(reference_values=params,
-                   bins=30)
+                                  bins=30)
 
     sample_smc_abc.plot_pairs(reference_values=params,
-                   bins=30)
+                              bins=30)
     plt.savefig("owl_pairs.png")
 
 if __name__ == '__main__':
