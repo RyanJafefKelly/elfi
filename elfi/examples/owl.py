@@ -130,7 +130,7 @@ def invoke_simulation(*inputs, **kwinputs):
         lmda_r = lmda_r[0]
     else:  # assumes something array like passed
         pass
-
+    print(f"k: {k}, lmda_r: {lmda_r}, rho: {rho}, tau: {tau}")
     lib = ctypes.cdll.LoadLibrary('./librunsim.so')
     lib.run_sim_wrapper.restype = ctypes.c_int
 
@@ -148,6 +148,8 @@ def invoke_simulation(*inputs, **kwinputs):
     batch_size = kwinputs['batch_size']
     random_state = np.random
 
+    print(', '.join(['{}={!r}'.format(k, v) for k, v in kwinputs.items()]))
+
     # Prepare the result array
     result_size = 2048  # Must match the expected size
     ResultArrayType = ctypes.c_double * result_size  # Define the array type
@@ -159,7 +161,7 @@ def invoke_simulation(*inputs, **kwinputs):
             seed = random_state.integers(low=0, high=1e+9)
         else:
             seed = random_state.randint(0, 1e+9)
-
+        print(f"seed: {seed}")
         _ = lib.run_sim_wrapper(ctypes.c_double(rho), ctypes.c_double(k), ctypes.c_double(tau),
                         ctypes.c_double(lmda_r), env_res, ctypes.c_double(s_time), s_day,
                         ctypes.c_double(sol_lat), ctypes.c_double(sol_long),
@@ -174,7 +176,7 @@ def invoke_simulation(*inputs, **kwinputs):
         # np_res = np_res.reshape((-1, 7))
         np_res = result_np[:(7 * len(times))]  # trim down from 2048 to actual data
         np_res = np_res.reshape((-1, 7))
-
+        print("np_res ", np_res)
         res_all.append(np_res)
     
     return res_all
