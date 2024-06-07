@@ -189,10 +189,12 @@ def summary_stats(*x):
     timestamp = x[:, 0]
     x_observed = x[:, 1]
     y_observed = x[:, 2]
+    print('x_observed: ', str(x_observed))
     step_distance_observed = x[:, 3]
     turning_angle_observed = x[:, 4]
     habitat_suitability_observed = x[:, 5]
     rsc = x[:, 6]
+    print('step_distance_observed: ', str(step_distance_observed))
 
     ssx = np.array([])  # TODO: magic
 
@@ -398,7 +400,7 @@ def summary_stats_batch(sims):
     for ii, x in enumerate(sims):
 
         ssx_all[ii, :] = summary_stats(x)
-
+        print('ii: ', str(ssx_all[ii, :]))
     return ssx_all
 
 

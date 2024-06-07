@@ -10,3 +10,5 @@ scikit-learn>=0.18.1
 numdifftools>=0.9
 arviz>=0.12.1
 setuptools>=69
+rasterio>=1.1.0
+pandas>=2.0.0
