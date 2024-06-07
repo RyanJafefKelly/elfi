@@ -4,7 +4,7 @@ import elfi
 import matplotlib.pyplot as plt
 from elfi.examples import owl
 from elfi.methods.bsl import pre_sample_methods, pdf_methods
-from elfi.clients.multiprocessing import Client as MultiprocessingClient
+# from elfi.clients.multiprocessing import Client as MultiprocessingClient
 from ctypes import cdll
 import multiprocessing as mp
 import pickle as pkl
@@ -35,7 +35,7 @@ def run_owl():
 
     # true_params = np.array([2, 1.5, 1, 5])  # TODO
 
-    elfi.set_client(MultiprocessingClient(num_processes=6))  # TODO: Hardcoded
+    # elfi.set_client(MultiprocessingClient(num_processes=6))  # TODO: Hardcoded
 
 
     m = owl.get_model(seed_obs=123, observed=False)
@@ -61,8 +61,8 @@ def run_owl():
     lmda_r = 5.0
     params = {'k': k, 'lmda_r': lmda_r, 'rho': rho, 'tau': tau}
 
-    mcmc_iterations = 200  # sample size
-    est_post_cov = np.array([[0.02, 0.01], [0.01, 0.02]])  # covariance matrix for the proposal distribution
+    mcmc_iterations = 20  # sample size
+    # est_post_cov = np.array([[0.02, 0.01], [0.01, 0.02]])  # covariance matrix for the proposal distribution
     logit_transform_bound = np.array([
                                     [0.1, 4],  # k
                                     [0.01, 30],  # lmdr_r
@@ -79,8 +79,8 @@ def run_owl():
 
     # pre-sampling
     # check summary statistics shape
-    nsim = 10000
-    seed = 1
+    # nsim = 10000
+    # seed = 1
     # pre_sample_methods.plot_features(m, params, nsim, feature_names, seed=seed)
     # plt.savefig("owl_features.png")
 
