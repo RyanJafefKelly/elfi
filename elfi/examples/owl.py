@@ -185,6 +185,7 @@ def summary_stats(*x):
     if np.allclose(x, 1):  # Something gone wrong...
         return -1.0 * np.ones(31)
     x = np.squeeze(np.array(x)).reshape((-1, 7))
+    print('x shape: ', x.shape)
     timestamp = x[:, 0]
     x_observed = x[:, 1]
     y_observed = x[:, 2]
@@ -321,9 +322,12 @@ def summary_stats(*x):
 
     # convex hull area
     X = np.column_stack((x_observed, y_observed))
-    hull = ConvexHull(points=X)
-    ss21 = hull.volume
-
+    try:
+        hull = ConvexHull(points=X)
+        ss21 = hull.volume
+    except Exception as e:
+        print("Hull error: ", e)
+        ss21 = -1e+6
     ssx = np.append(ssx, ss21)  # TODO? maybe bad distribution
 
     # cluster in distance matrix

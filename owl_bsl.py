@@ -39,7 +39,6 @@ def run_owl():
 
 
     m = owl.get_model(seed_obs=123, observed=False)
-    batch_size = 50
 
     feature_names = 'S'
 
@@ -51,7 +50,7 @@ def run_owl():
     likelihood = pdf_methods.semiparametric_likelihood()
 
     n_sim_round = 300
-    # batch_size = 300
+    batch_size = 50
     semi_bsl = elfi.BSL(m, n_sim_round=n_sim_round,
                         batch_size=batch_size, seed=1, likelihood=likelihood)
 
