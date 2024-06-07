@@ -131,7 +131,7 @@ def invoke_simulation(*inputs, **kwinputs):
     else:  # assumes something array like passed
         pass
 
-    lib = ctypes.cdll.LoadLibrary('./librunsim.so')
+    lib = ctypes.cdll.LoadLibrary('./librunsim.dylib')
     lib.run_sim_wrapper.restype = ctypes.c_int
 
     # Retrieve inputs and convert to ctypes as needed
