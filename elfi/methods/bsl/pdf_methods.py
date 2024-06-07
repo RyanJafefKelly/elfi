@@ -270,22 +270,14 @@ def syn_likelihood_misspec(ssx, ssy, gamma, adjustment):
 
     Uses mean or variance adjustment to compensate for model misspecification.
 
-<<<<<<< Updated upstream
     References
     ----------
     D. T. Frazier and C. Drovandi (2019).
     Robust Approximate Bayesian Inference with Synthetic Likelihood,
     J. Computational and Graphical Statistics, 30(4), 958-976.
     https://doi.org/10.1080/10618600.2021.1875839
-=======
-def syn_likelihood_misspec(self, *ssx, adjustment="variance", tau=0.5,
-                           penalty=None, whitening=None, observed=None,
-                           gamma=None, curr_loglik=None, prev_std=None,
-                           **kwargs):
-    """Calculate the posterior logpdf using the standard synthetic likelihood.
->>>>>>> Stashed changes
-
-    Parameters
+   
+   Parameters
     ----------
     ssx : np.array
         Simulated summaries at x

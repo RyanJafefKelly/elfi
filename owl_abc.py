@@ -36,14 +36,14 @@ def run_owl():
     # true_params = np.array([2, 1.5, 1, 5])  # TODO
     elfi.set_client(MultiprocessingClient(num_processes=4))
 
-    m = owl.get_model(seed_obs=123, observed=False)
+    m = owl.get_model(seed_obs=123, observed=True)
 
     # rej = elfi.Rejection(m['d'], batch_size=1, seed=123)
     # schedule = [2.0e+3, 5e+2, 1e+2]
     smc_abc = elfi.AdaptiveThresholdSMC(m['d'], batch_size=1, seed=123, q_threshold=0.995)
 
     tic = time.time()
-    sample_smc_abc = smc_abc.sample(2000, max_iter=5)
+    sample_smc_abc = smc_abc.sample(500, max_iter=3)
     toc = time.time()
     print("SMC ABC sampling time: ", toc - tic)
     print(sample_smc_abc)
