@@ -1,51 +1,24 @@
 """Little owls..."""
 
-import os
-import warnings
-
-import numpy as np
-# from numpyctypes import c_ndarray
-from sklearn.linear_model import LinearRegression, QuantileRegressor
-import rasterio
-from numpyctypes import c_ndarray
 import ctypes
-# from contextlib import redirect_stdout
-import multiprocessing as mp
+import uuid
 from functools import partial
 
-from scipy.stats import skew
+import numpy as np
+import pandas as pd
+import rasterio
 from scipy.spatial import ConvexHull
 from scipy.spatial.distance import pdist
+from scipy.stats import skew
+# from numpyctypes import c_ndarray
+from sklearn.linear_model import LinearRegression, QuantileRegressor
+
 import elfi
-import pandas as pd
-import time
-import uuid
+from numpyctypes import c_ndarray
 
-# TODO: yucky global stuff
-# dat = np.zeros((15092, 16730))
-# i = 0
-# with rasterio.open("habitatSuitability_scaled_20.tif") as src:
-#     profile = src.profile.copy()
-#     print(src.profile)
-#     for ji, window in src.block_windows(1):
-#         window_dat = src.read(window=window)
-#         window_dat[np.where(window_dat < 0)] = 0
-#         dat[:, i] = window_dat.flatten()
-#         i += 1
-
-# TODO: really need to sort out this ugly global shit ...
-# dat = np.loadtxt("habsuitcalib_new.txt")
-# dat = np.transpose(dat)  # TODO! TESTING
-# dat = np.ones((5829, 6489))
-
-# environment_c = c_ndarray(dat, dtype=np.double, ndim=2)
-# lib = ctypes.cdll.LoadLibrary('./runsim.so')  # TODO! UPDATE
-
-# def moderate_negatively_skewed(x):
-#     """Moderately negatively skewed data to more normal"""
-#     return np.sqrt(max())
 
 def load_and_process_data(filepath):
+    """read habitat infos"""
     data = np.zeros((15092, 16730))
     i = 0
     with rasterio.open(filepath) as src:
@@ -57,23 +30,20 @@ def load_and_process_data(filepath):
             i += 1
     return data
 
+
 def load_shared_library(lib_path):
     lib = ctypes.cdll.LoadLibrary(lib_path)
     return lib
 
-def prepare_inputs(*inputs, **kwinputs):
-    """Prepare the inputs for the simulator
 
-    """
+def prepare_inputs(*inputs, **kwinputs):
+    """Prepare the inputs for the simulator."""
     rho, k, tau, lmda_r = inputs
     if 'meta' in kwinputs:
         meta = kwinputs['meta']
         filename = '{model_name}_{batch_index}_{submission_index}.txt'.format(**meta)
     else:
         filename = str(uuid.uuid4()) + '.txt'
-        # filename = ' a_temp_file.txt'
-    # Organize the parameters to an array. The broadcasting works nicely with constant
-    # arguments.
 
     try:
         random_state = kwinputs['random_state']
@@ -83,13 +53,8 @@ def prepare_inputs(*inputs, **kwinputs):
         seed = random_state.randint(1e+9)
 
     kwinputs['seed'] = seed
-    # param_array = np.row_stack(np.broadcast(rho, k, tau, lmda_r))
 
-    # Prepare a unique filename for parallel settings
-    # np.savetxt(filename, param_array, fmt='%.4f %.4f %.4f %d')
-
-    # Add the filenames to kwinputs
-    # TODO! HARDCODED ONE FOR NOW
+    # TODO HARDCODED INDIVIDUAL FOR NOW ... COULD DO AMORTISED / MULTIPLE RUNS
     ind_data = pd.read_csv("individual_data/individual_data/calibration_2011VA0533_data.csv",
                     header=None,
                     names=["timestamp", "xObserved", "yObserved",
@@ -105,31 +70,21 @@ def prepare_inputs(*inputs, **kwinputs):
         lines = f.readlines()
         ind_data_start_day = int(lines[0].strip())
 
-    # ind_data_start_time = pd.read_csv("individual_data/individual_data/calibration_2011VA0533_start_time.txt")
-    # ind_data_start_day = pd.read_csv("individual_data/individual_data/calibration_2011VA0533_start_day.txt")
     ind_data_centroid = pd.read_csv("individual_data/individual_data/calibration_2011VA0533_centroid.csv", header=None)
     ind_data = np.array(ind_data)
 
-    # str_timestamp = [str(int(time_val)) for time_val in ind_data[:, 0]]
-    # str_timestamp = ' '.join(str_timestamp)
     times = np.array(ind_data[:, 0], dtype='uintc')
-
-
 
     kwinputs['s_time'] = ind_data_start_time
     kwinputs['s_day'] = ind_data_start_day
     kwinputs['sol_lat'] = ind_data_centroid.values[0][0]
     kwinputs['sol_long'] = ind_data_centroid.values[1][0]
 
-    kwinputs['upper_left_left'] = 3436195  # TODO
-    kwinputs['upper_left_top'] = 5474136  # TODO
+    kwinputs['upper_left_left'] = 3436195  # TODO?
+    kwinputs['upper_left_top'] = 5474136  # TODO?
 
-    kwinputs['observation_error'] = 2.4  # TODO! HARDCODED OBSERVATION ERROR FROM AccMetric R - LOSIM/code/calibrationScript.R
+    kwinputs['observation_error'] = 2.4  # TODO HARDCODED OBSERVATION ERROR FROM AccMetric R - LOSIM/code/calibrationScript.R
     kwinputs['environment_c'] = c_ndarray(kwinputs['environment_c'], dtype=np.double, ndim=2)
-
-    # if 'seed' not in kwinputs:
-    #     seed =  rng.integers(low=0, high=1e+9)  # TODO? want bigger...
-    #     kwinputs['seed'] = seed
 
     kwinputs['times'] = times
 
@@ -165,12 +120,8 @@ def process_result(completed_process, *inputs, **kwinputs):
     return completed_process
 
 
-
-# Create an external operation callable
-# TODO: add seed, etc.
-
 def invoke_simulation(*inputs, **kwinputs):
-    # NOTE: a bit dodgy...
+    """Invoke the owl simulation."""
     k, lmda_r, rho, tau = inputs
     if hasattr(rho, '__len__') and len(rho) > 1:
         rho = rho[0]
@@ -179,10 +130,6 @@ def invoke_simulation(*inputs, **kwinputs):
         lmda_r = lmda_r[0]
     else:  # assumes something array like passed
         pass
-        # rho = rho[0]
-        # k = k[0]
-        # tau = tau[0]
-        # lmda_r = lmda_r[0]
 
     lib = ctypes.cdll.LoadLibrary('./librunsim.so')
     lib.run_sim_wrapper.restype = ctypes.c_int
@@ -213,7 +160,7 @@ def invoke_simulation(*inputs, **kwinputs):
         else:
             seed = random_state.randint(0, 1e+9)
 
-        result_status = lib.run_sim_wrapper(ctypes.c_double(rho), ctypes.c_double(k), ctypes.c_double(tau),
+        _ = lib.run_sim_wrapper(ctypes.c_double(rho), ctypes.c_double(k), ctypes.c_double(tau),
                         ctypes.c_double(lmda_r), env_res, ctypes.c_double(s_time), s_day,
                         ctypes.c_double(sol_lat), ctypes.c_double(sol_long),
                         ctypes.c_double(observation_error),
@@ -229,193 +176,13 @@ def invoke_simulation(*inputs, **kwinputs):
         np_res = np_res.reshape((-1, 7))
 
         res_all.append(np_res)
-
-    # Assume result processing is needed to convert ctypes to numpy array, etc.
-    # processed_result = process_result(result, *inputs, **kwinputs)
     
     return res_all
 
-# def owl(k, lmda_r, rho, tau, batch_size=1, random_state=None, **kwargs):
-#     ind_data = pd.read_csv("individual_data/individual_data/calibration_2011VA0533_data.csv",
-#                 header=None,
-#                 names=["timestamp", "xObserved", "yObserved",
-#                         "stepDistanceObserved", "tuningAngleObserved",
-#                         "habitatSuitabilityObserved", "rsc"])
-#     ind_data_start_time = 0
-#     with open("individual_data/individual_data/calibration_2011VA0533_start_time.txt") as f:
-#         lines = f.readlines()
-#         ind_data_start_time = float(lines[0].strip())
-
-#     ind_data_start_day = 0
-#     with open("individual_data/individual_data/calibration_2011VA0533_start_day.txt") as f:
-#         lines = f.readlines()
-#         ind_data_start_day = int(lines[0].strip())
-
-#     # ind_data_start_time = pd.read_csv("individual_data/individual_data/calibration_2011VA0533_start_time.txt")
-#     # ind_data_start_day = pd.read_csv("individual_data/individual_data/calibration_2011VA0533_start_day.txt")
-#     ind_data_centroid = pd.read_csv("individual_data/individual_data/calibration_2011VA0533_centroid.csv", header=None)
-#     ind_data = np.array(ind_data)
-#     times = np.array(ind_data[:, 0], dtype='uintc')
-#     # str_timestamp = [str(int(time_val)) for time_val in ind_data[:, 0]]
-#     # str_timestamp = ' '.join(str_timestamp)
-
-#     s_time = ind_data_start_time
-#     s_day = int(ind_data_start_day)
-#     sol_lat = ind_data_centroid.values[0][0]
-#     sol_long = ind_data_centroid.values[1][0]
-
-#     upper_left_left = 3436195  # TODO
-#     upper_left_top = 5474136  # TODO
-
-#     random_state = random_state or np.random
-
-#     # if 'seed' not in kwinputs:
-#     #     seed =  rng.integers(low=0, high=1e+9)  # TODO? want bigger...
-#     #     kwinputs['seed'] = seed
-
-#     # times = str_timestamp
-#     times_c = c_ndarray(times, dtype=np.uintc, ndim=1)
-#     env_res = 20  # TODO: FLEXIBLE
-#     tic = time.time()
-
-#     # with open(filename, 'w') as f, redirect_stdout(f):
-#     # func = lib.run_sim_wrapper
-#     # environment_dummy = np.zeros((100, 100))
-#     # environment_dummy_c = c_ndarray(environment_dummy, dtype=np.double, ndim=2)
-#     func.restype = ctypes.POINTER(ctypes.c_double * 2048)
-#     if hasattr(random_state, 'integers'):
-#         seed = random_state.integers(low=0, high=1e+9)
-#     else:
-#         seed = random_state.randint(0, 1e+9)
-
-#     # print('seed', seed)
-#     # TODO! HARDCODED OBSERVATION ERROR FROM AccMetric R - LOSIM/code/calibrationScript.R
-#     # observation_error = np.random.normal(35.03423, 33.47957)
-#     observation_error = 2.4
-
-#     # TODO! TRANSLATE SPATIAL CO-ORDS / ANYTHING ELSE RELEVANT
-
-#     res = lib.run_sim_wrapper_wrapper(ctypes.c_double(rho), ctypes.c_double(k), ctypes.c_double(tau),
-#                     ctypes.c_double(lmda_r), env_res, ctypes.c_double(s_time), s_day,
-#                     ctypes.c_double(sol_lat), ctypes.c_double(sol_long),
-#                     ctypes.c_double(observation_error),
-#                     upper_left_left, upper_left_top,
-#                     ctypes.c_ulonglong(seed), times_c,
-#                     environment_c)
-#     np_res = np.array([el for el in res.contents])
-#     np_res = np_res[:(7 * len(times))]  # trim down from 2048 to actual data
-#     np_res = np_res.reshape((-1, 7))
-#     # print("time: ", toc - tic)
-#     return np_res
-
-
-# def owl_batch(k, lmda_r, rho, tau, batch_size=1, meta=None, random_state=None, **kwargs):
-#     if hasattr(rho, '__len__') and len(rho) > 1:
-#         rho = rho[0]
-#         k = k[0]
-#         tau = tau[0]
-#         lmda_r = lmda_r[0]
-#     else:  # assumes something array like passed
-#         pass
-#         # rho = rho[0]
-#         # k = k[0]
-#         # tau = tau[0]
-#         # lmda_r = lmda_r[0]
-
-#     data = load_and_process_data("habitatSuitability_scaled_20.tif")
-#     environment_c = c_ndarray(data, dtype=np.double, ndim=2)
-#     lib = load_shared_library('./runsim.so')
-
-#     # TODO! HARDCODED ONE FOR NOW
-#     ind_data = pd.read_csv("individual_data/individual_data/calibration_2011VA0533_data.csv",
-#                     header=None,
-#                     names=["timestamp", "xObserved", "yObserved",
-#                             "stepDistanceObserved", "tuningAngleObserved",
-#                             "habitatSuitabilityObserved", "rsc"])
-#     ind_data_start_time = 0
-#     with open("individual_data/individual_data/calibration_2011VA0533_start_time.txt") as f:
-#         lines = f.readlines()
-#         ind_data_start_time = float(lines[0].strip())
-
-#     ind_data_start_day = 0
-#     with open("individual_data/individual_data/calibration_2011VA0533_start_day.txt") as f:
-#         lines = f.readlines()
-#         ind_data_start_day = int(lines[0].strip())
-
-#     # ind_data_start_time = pd.read_csv("individual_data/individual_data/calibration_2011VA0533_start_time.txt")
-#     # ind_data_start_day = pd.read_csv("individual_data/individual_data/calibration_2011VA0533_start_day.txt")
-#     ind_data_centroid = pd.read_csv("individual_data/individual_data/calibration_2011VA0533_centroid.csv", header=None)
-#     ind_data = np.array(ind_data)
-#     times = np.array(ind_data[:, 0], dtype='uintc')
-#     # str_timestamp = [str(int(time_val)) for time_val in ind_data[:, 0]]
-#     # str_timestamp = ' '.join(str_timestamp)
-
-#     s_time = ind_data_start_time
-#     s_day = int(ind_data_start_day)
-#     sol_lat = ind_data_centroid.values[0][0]
-#     sol_long = ind_data_centroid.values[1][0]
-
-#     upper_left_left = 3436195  # TODO
-#     upper_left_top = 5474136  # TODO
-
-#     random_state = random_state or np.random
-
-#     # if 'seed' not in kwinputs:
-#     #     seed =  rng.integers(low=0, high=1e+9)  # TODO? want bigger...
-#     #     kwinputs['seed'] = seed
-
-#     # times = str_timestamp
-#     times_c = c_ndarray(times, dtype=np.uintc, ndim=1)
-#     env_res = 20  # TODO: FLEXIBLE
-#     tic = time.time()
-
-#     # with open(filename, 'w') as f, redirect_stdout(f):
-#     func = lib.run_sim_wrapper
-#     # environment_dummy = np.zeros((100, 100))
-#     # environment_dummy_c = c_ndarray(environment_dummy, dtype=np.double, ndim=2)
-#     func.restype = ctypes.POINTER(ctypes.c_double * 2048)
-#     res_all = []
-#     for i in range(batch_size):
-#         if hasattr(random_state, 'integers'):
-#             seed = random_state.integers(low=0, high=1e+9)
-#         else:
-#             seed = random_state.randint(0, 1e+9)
-#         # TODO! HARDCODED OBSERVATION ERROR FROM AccMetric R - LOSIM/code/calibrationScript.R
-#         observation_error = 2.4
-#         res = lib.run_sim_wrapper(ctypes.c_double(rho), ctypes.c_double(k), ctypes.c_double(tau),
-#                         ctypes.c_double(lmda_r), env_res, ctypes.c_double(s_time), s_day,
-#                         ctypes.c_double(sol_lat), ctypes.c_double(sol_long),
-#                         ctypes.c_double(observation_error),
-#                         upper_left_left, upper_left_top,
-#                         ctypes.c_ulonglong(seed), times_c,
-#                         environment_c)
-#         try:
-#             np_res = np.array([el for el in res.contents])
-#         except ValueError as e:
-#             np_res = np.ones(2048)
-#         np_res = np_res[:(7 * len(times))]  # trim down from 2048 to actual data
-#         np_res = np_res.reshape((-1, 7))
-#         res_all.append(np_res)
-#     toc = time.time()
-#     # print("time: ", toc - tic)
-
-#     return res_all
-
-
-# def sim_fn(rho, k, tau, lmda_r, batch_size=1, meta=None, random_state=None):
-#     # sims = []
-#     # # TODO! BAD TEMP ... PARALLELISE!
-#     # for i in range(batch_size):
-#     #     try:
-#     res = OWL(rho[0], k[0], tau[0], lmda_r[0], meta=meta, random_state=random_state)
-#         # except Exception as e:
-#         #     print(e)
-#         # sims.append(res)
-#     return res
-
 
 def summary_stats(*x):
-    if np.allclose(x, 1):
+    """Calculate the summary statistics for the owl data."""
+    if np.allclose(x, 1):  # Something gone wrong...
         return -1.0 * np.ones(31)
     x = np.squeeze(np.array(x)).reshape((-1, 7))
     print('x shape: ', x.shape)
@@ -690,8 +457,6 @@ def get_model(true_params=None, seed_obs=None, upper_left=None, observed=False):
     # Summary
     elfi.Summary(summary_fn, m['OWL'], name='S')
 
-    # Synthetic Likelihood
-    # elfi.SyntheticLikelihood('semibsl', m['S'], name='SL')
     elfi.Distance('euclidean', m['S'], name='d')
     elfi.AdaptiveDistance('euclidean', m['S'], name='d_adapt')
     return m

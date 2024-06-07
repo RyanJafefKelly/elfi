@@ -49,7 +49,6 @@ def run_owl():
     params = {'k': k, 'lmda_r': lmda_r, 'rho': rho, 'tau': tau}
 
     mcmc_iterations = 20  # sample size
-    #est_post_cov = np.array([[0.02, 0.01], [0.01, 0.02]])  # covariance matrix for the proposal distribution
     logit_transform_bound = np.array([
                                     [0.1, 4],  # k
                                     [0.01, 30],  # lmdr_r
@@ -66,10 +65,6 @@ def run_owl():
 
     # pre-sampling
     # check summary statistics shape
-    #nsim = 10000
-    #seed = 1
-    # pre_sample_methods.plot_features(m, params, nsim, feature_names, seed=seed)
-    # plt.savefig("owl_features.png")
 
     # TODO: should also check log SL stdev
 
