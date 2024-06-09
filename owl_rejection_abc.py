@@ -4,7 +4,7 @@ import elfi
 import matplotlib.pyplot as plt
 from elfi.examples import owl
 from elfi.methods.bsl import pre_sample_methods, pdf_methods
-# from elfi.clients.multiprocessing import Client as MultiprocessingClient
+from elfi.clients.multiprocessing import Client as MultiprocessingClient
 from ctypes import cdll
 import multiprocessing as mp
 import pickle as pkl
@@ -34,22 +34,24 @@ def run_owl():
     ind_data_centroid = pd.read_csv("individual_data/individual_data/calibration_2011VA0533_centroid.csv")
 
     # true_params = np.array([2, 1.5, 1, 5])  # TODO
-    # elfi.set_client(MultiprocessingClient(num_processes=2))
+    elfi.set_client(MultiprocessingClient(num_processes=1))
 
     m = owl.get_model(seed_obs=123, observed=False)
     # rej = elfi.Rejection(m['d'], batch_size=1, seed=123)
     # schedule = [2.0e+3, 5e+2, 1e+2]
-    smc_abc = elfi.AdaptiveDistanceSMC(m['d_adapt'], batch_size=1, seed=123)
+    rej_abc = elfi.Rejection(m['d'], batch_size=10)
+
+    N = 100
 
     tic = time.time()
-    sample_smc_abc = smc_abc.sample(500, 5)
+    sample_rej_abc = rej_abc.sample(N, quantile=0.1)
     toc = time.time()
-    print("SMC ABC sampling time: ", toc - tic)
-    print(sample_smc_abc)
+    print("Rejection ABC sampling time: ", toc - tic)
+    print(sample_rej_abc)
     # print(sample_smc_abc.compute_ess())
 
-    with open("owl_smc_abc.pkl", "wb") as f:
-        pkl.dump(sample_smc_abc, f)
+    with open("owl_rej_abc.pkl", "wb") as f:
+        pkl.dump(sample_rej_abc, f)
 
     # sample_smc_abc.plot_traces()
     # plt.savefig("owl_traces.png")
@@ -61,12 +63,13 @@ def run_owl():
 
     params = {'k': k, 'lmda_r': lmda_r, 'rho': rho, 'tau': tau}
 
-    # sample_smc_abc.plot_marginals(reference_values=params,
+    # sample_rej_abc.plot_marginals(reference_values=params,
     #                               bins=30)
+    # plt.savefig("owl_rej_abc_marginals.png")
 
-    sample_smc_abc.plot_pairs(reference_values=params,
+    sample_rej_abc.plot_pairs(reference_values=params,
                               bins=30)
-    plt.savefig("owl_pairs.png")
+    plt.savefig("owl_rej_abc_pairs.png")
 
 if __name__ == '__main__':
     run_owl()

@@ -7,11 +7,14 @@ from functools import partial
 import numpy as np
 import pandas as pd
 import rasterio
+import copy
+import pickle as pkl
 from scipy.spatial import ConvexHull
 from scipy.spatial.distance import pdist
 from scipy.stats import skew
 # from numpyctypes import c_ndarray
 from sklearn.linear_model import LinearRegression, QuantileRegressor
+import time
 
 import elfi
 from numpyctypes import c_ndarray
@@ -53,24 +56,25 @@ def prepare_inputs(*inputs, **kwinputs):
         seed = random_state.randint(1e+9)
 
     kwinputs['seed'] = seed
+    individual_info = kwinputs['individual_info']
 
     # TODO HARDCODED INDIVIDUAL FOR NOW ... COULD DO AMORTISED / MULTIPLE RUNS
-    ind_data = pd.read_csv("individual_data/individual_data/calibration_2011VA0533_data.csv",
+    ind_data = pd.read_csv(f"individual_data/individual_data/calibration_{individual_info}_data.csv",
                     header=None,
                     names=["timestamp", "xObserved", "yObserved",
                             "stepDistanceObserved", "tuningAngleObserved",
                             "habitatSuitabilityObserved", "rsc"])
     ind_data_start_time = 0
-    with open("individual_data/individual_data/calibration_2011VA0533_start_time.txt") as f:
+    with open(f"individual_data/individual_data/calibration_{individual_info}_start_time.txt") as f:
         lines = f.readlines()
         ind_data_start_time = float(lines[0].strip())
 
     ind_data_start_day = 0
-    with open("individual_data/individual_data/calibration_2011VA0533_start_day.txt") as f:
+    with open(f"individual_data/individual_data/calibration_{individual_info}_start_day.txt") as f:
         lines = f.readlines()
         ind_data_start_day = int(lines[0].strip())
 
-    ind_data_centroid = pd.read_csv("individual_data/individual_data/calibration_2011VA0533_centroid.csv", header=None)
+    ind_data_centroid = pd.read_csv(f"individual_data/individual_data/calibration_{individual_info}_centroid.csv", header=None)
     ind_data = np.array(ind_data)
 
     times = np.array(ind_data[:, 0], dtype='uintc')
@@ -94,31 +98,6 @@ def prepare_inputs(*inputs, **kwinputs):
     kwinputs['batch_size'] = 1 if 'batch_size' not in kwinputs else kwinputs['batch_size']
 
     return inputs, kwinputs
-
-
-def process_result(completed_process, *inputs, **kwinputs):
-    """Process the result of the owl simulation.
-
-    The signature follows that given in `elfi.tools.external_operation`
-    """
-    # output_filename = kwinputs['output_filename']
-
-    # # simulations = np.loadtxt(output_filename)
-    # # simulations = pd.read_fwf(output_filename)
-    # with open(output_filename, 'r') as f:
-    #     # for line in f:
-    #     #     print('line', line)
-    #     #     for val in line.split(sep=";")
-    #     simulations = [float(val) for line in f for val in line.strip().split(sep=',')]
-    #     # for line in f:
-    #     #     for word in line.split()
-
-    # # Clean up the files after reading the data in
-    # # os.remove(kwinputs['filename'])
-    # os.remove(output_filename)
-
-    return completed_process
-
 
 def invoke_simulation(*inputs, **kwinputs):
     """Invoke the owl simulation."""
@@ -161,7 +140,7 @@ def invoke_simulation(*inputs, **kwinputs):
             seed = random_state.integers(low=0, high=1e+9)
         else:
             seed = random_state.randint(0, 1e+9)
-        # print(f"seed: {seed}")
+
         _ = lib.run_sim_wrapper(ctypes.c_double(rho), ctypes.c_double(k), ctypes.c_double(tau),
                         ctypes.c_double(lmda_r), env_res, ctypes.c_double(s_time), s_day,
                         ctypes.c_double(sol_lat), ctypes.c_double(sol_long),
@@ -175,50 +154,134 @@ def invoke_simulation(*inputs, **kwinputs):
         # np_res = np_res[:(7 * len(times))]  # trim down from 2048 to actual data
         # np_res = np_res.reshape((-1, 7))
         np_res = result_np[:(7 * len(times))]  # trim down from 2048 to actual data
-        np_res = np_res.reshape((-1, 7))
+        np_res = copy.copy(np_res.reshape((-1, 7)))
         # print("np_res ", np_res)
         res_all.append(np_res)
-    
+
     return res_all
 
 
-def summary_stats_subset(sim):
-    # TODO! BAD HACK TO CHECKOUT RESULTS QUICKLY
-    full_summaries = summary_stats(sim)
-    good_idx = [2, 3, 4, 5, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28]
-    return full_summaries[good_idx]
-
-
-
-def summary_stats(*x):
-    # TODO! CLEANUP SUMMARIES
-    """Calculate the summary statistics for the owl data."""
+def _prep_x(x):
     if np.allclose(x, 1):  # Something gone wrong...
         return -1.0 * np.ones(31)
     x = np.squeeze(np.array(x)).reshape((-1, 7))
-    # print('x shape: ', x.shape)
+    return x
+
+
+def summary_stats_batch(sims):
+    batch_size = len(sims)
+    ssx_all = np.zeros((batch_size, 42))
+    for ii, sim in enumerate(sims):
+        ssx = []
+        ssx.append(habitat_suitability_summaries(sim))
+        ssx.append(linear_reg_summaries(sim))
+        ssx.append(short_step_summaries(sim))
+        ssx.append(start_end_distance(sim))
+        ssx.append(cumulative_distance_summaries(sim))
+        ssx.append(direct_distance_summaries(sim))
+        ssx.append(convex_hull_summary(sim))
+        ssx.append(histogram_summaries(sim))
+        ssx.append(rsc_summaries(sim))
+        ssx_all[ii, :] = np.concatenate(ssx)
+
+    # set any not finite values to -1e+6
+    ssx_all[~np.isfinite(ssx_all)] = -1e+6
+    return ssx_all
+
+def habitat_suitability_summaries_batch(sims):
+    batch_size = len(sims)
+    ssx = np.zeros((batch_size, 4))
+    for ii, sim in enumerate(sims):
+        ssx[ii, :] = habitat_suitability_summaries(sim)
+
+    return ssx
+
+
+def linear_reg_summaries_batch(sims):
+    batch_size = len(sims)
+    ssx = np.zeros((batch_size, 4))
+    for ii, sim in enumerate(sims):
+        ssx[ii, :] = linear_reg_summaries(sim)
+
+    return ssx
+
+def short_step_summaries_batch(sims):
+    batch_size = len(sims)
+    ssx = np.zeros((batch_size, 10))
+    for ii, sim in enumerate(sims):
+        ssx[ii, :] = short_step_summaries(sim)
+
+    return ssx
+
+def cumulative_distance_summaries_batch(sims):
+    batch_size = len(sims)
+    ssx = np.zeros((batch_size, 9))
+    for ii, sim in enumerate(sims):
+        ssx[ii, :] = cumulative_distance_summaries(sim)
+
+    return ssx
+
+def direct_distance_summaries_batch(sims):
+    batch_size = len(sims)
+    ssx = np.zeros((batch_size, 4))
+    for ii, sim in enumerate(sims):
+        ssx[ii, :] = direct_distance_summaries(sim)
+
+    return ssx
+
+def histogram_summaries_batch(sims):
+    batch_size = len(sims)
+    ssx = np.zeros((batch_size, 2))
+    for ii, sim in enumerate(sims):
+        ssx[ii, :] = histogram_summaries(sim)
+
+    return ssx
+
+def rsc_summaries_batch(sims):
+    batch_size = len(sims)
+    ssx = np.zeros((batch_size, 7))
+    for ii, sim in enumerate(sims):
+        ssx[ii, :] = rsc_summaries(sim)
+
+    return ssx
+
+def convex_hull_summary_batch(sims):
+    batch_size = len(sims)
+    ssx = np.zeros((batch_size, 1))
+    for ii, sim in enumerate(sims):
+        ssx[ii, :] = convex_hull_summary(sim)
+
+    return ssx
+
+def start_end_distance_batch(sims):
+    batch_size = len(sims)
+    ssx = np.zeros((batch_size, 1))
+    for ii, sim in enumerate(sims):
+        ssx[ii, :] = start_end_distance(sim)
+
+    return ssx
+
+
+def habitat_suitability_summaries(*x):
+    """Corresponds to S1-4."""
+    x = _prep_x(x)
+    habitat_suitability_observed = x[:, 5]
+    hs_quantiles = np.quantile(habitat_suitability_observed, [.1, .9])
+    hs_std = np.log(np.std(habitat_suitability_observed))
+    hs_mean = np.mean(habitat_suitability_observed)
+
+    return np.array([hs_quantiles[0], hs_quantiles[1], hs_std, hs_mean])
+
+
+def linear_reg_summaries(*x):
+    """Corresponds to S5-8."""
+    x = _prep_x(x)
     timestamp = x[:, 0]
     x_observed = x[:, 1]
     y_observed = x[:, 2]
-    # print('x_observed: ', str(x_observed))
     step_distance_observed = x[:, 3]
-    turning_angle_observed = x[:, 4]
-    habitat_suitability_observed = x[:, 5]
-    rsc = x[:, 6]
-    # print('step_distance_observed: ', str(step_distance_observed))
 
-    ssx = np.array([])  # TODO: magic
-
-    # ss1 = np.quantile(habitat_suitability_observed, [.1, .9])
-    # ssx[0] = ss1[0]  # TODO: moderate neg skew - not fixed
-    # ssx[1] = ss1[1] # TODO! REMOVE? -> fairly arbitrary transform... good enough??
-    # ss2 = np.log(np.std(habitat_suitability_observed))  # TODO: ADDED LOG TRANSFORM STILL LONG TAIL...
-    ss3 = np.mean(habitat_suitability_observed)  # TODO? maybe too skewed shape?
-    # ssx = np.append(ssx, ss2)
-    ssx = np.append(ssx, ss3)
-    # ssx[2] = ss2
-    # ssx[3] = ss3
-    num_samples = 1000  # TODO! Adjusting ... originally 5000(?)
+    num_samples = 1000  # TODO: 5000 originally ... get away with less?
     N = len(timestamp)
     from_samples = np.random.choice(N, num_samples, replace=True)
     to_samples = np.random.choice(N, num_samples, replace=True)
@@ -235,58 +298,70 @@ def summary_stats(*x):
                     (y_observed[to_samples] - y_observed[from_samples])**2)
     X = np.column_stack((dist_cum, dist_cum_sq, dist_dir))
     lm = LinearRegression().fit(X, delta_t)
-    # ss4_intercept = lm.intercept_
-    # ss4_coeffs = lm.coef_
-    # ss4 = np.array([lm.intercept_, lm.coef_])
-    # ssx[4] = lm.intercept_
-    # ssx[5] = lm.coef_[0]
-    # ssx[6] = lm.coef_[1]
-    # ssx[7] = lm.coef_[2]
 
-    ssx = np.append(ssx, lm.intercept_)
-    ssx = np.append(ssx, lm.coef_[0])
-    ssx = np.append(ssx, lm.coef_[1])
-    ssx = np.append(ssx, lm.coef_[2])  # TODO: TRANSFORM IF KEEP
+    return np.array([lm.intercept_, lm.coef_[0], lm.coef_[1], lm.coef_[2]])
 
-    # points less than 30 min apart
+
+def short_step_summaries(*x):
+    """Corresponds to S9-18."""
+    x = _prep_x(x)
+    timestamp = x[:, 0]
+    step_distance_observed = x[:, 3]
+    turning_angle_observed = x[:, 4]
+
     time_diff = np.diff(timestamp)
     short_steps = np.where(time_diff < 30)[0] + 1
 
-    # distances travelled in short time intervals
-    # TODO: INVESTIGATE DIFFERENCES - ss9-11
     short_dist = step_distance_observed[short_steps]
-    # ss5 = np.nanstd(short_dist)  # TODO? slight diff - pretty rough summary distribution...
-    ss6 = np.nanmean(short_dist)
-    ss7 = np.nanquantile(short_dist, [.1, .9])
-
-    # TODO: WHY DIFFERENCES IN SS?
-    # ssx[8] = ss5
-    ssx = np.append(ssx, ss6)
-    ssx = np.append(ssx, ss7[0])
-    ssx = np.append(ssx, ss7[1])
+    short_dist_std = np.nanstd(short_dist)
+    short_dist_mean = np.nanmean(short_dist)
+    short_dist_quantiles = np.nanquantile(short_dist, [.1, .9])
 
     # angles during short time intervals
     short_angle = turning_angle_observed[short_steps]
-    ss8 = np.nanstd(short_angle)  # TODO? slight diff
-    ss9 = np.nanmean(short_angle)
-    ss10 = np.nanquantile(short_angle, [.1, .2, .8, .9])
+    short_angle_std = np.nanstd(short_angle)  # TODO? slight diff
+    short_angle_mean = np.nanmean(short_angle)
+    short_angle_quantiles = np.nanquantile(short_angle, [.1, .2, .8, .9])
 
-    ssx = np.append(ssx, ss8)
-    ssx = np.append(ssx, ss9)
-    ssx = np.append(ssx, ss10[0])
-    ssx = np.append(ssx, ss10[1])
-    ssx = np.append(ssx, ss10[2])  # TODO?: summary distribution
-    ssx = np.append(ssx, ss10[3])  # TODO?: summary distribution
+    return np.array([short_dist_std, short_dist_mean,
+                     short_dist_quantiles[0], short_dist_quantiles[1],
+                     short_angle_std, short_angle_mean,
+                     short_angle_quantiles[0], short_angle_quantiles[1],
+                     short_angle_quantiles[2], short_angle_quantiles[3]])
 
 
-    # start-end distance
-    ss11 = np.sqrt((x_observed[-1] - x_observed[0]) ** 2 +
-                   (y_observed[-1] - y_observed[0]) ** 2)
+def start_end_distance(*x):
+    """S19"""
+    x = _prep_x(x)
+    x_observed = x[:, 1]
+    y_observed = x[:, 2]
 
-    # NOTE: S_15
-    ssx = np.append(ssx, ss11)  # TODO? summary distribution
+    start_end = np.sqrt((x_observed[-1] - x_observed[0]) ** 2 +
+                        (y_observed[-1] - y_observed[0]) ** 2)
+    return np.array([np.log(start_end)])
 
-    # max effort
+
+def cumulative_distance_summaries(*x):
+    """S20-25, S28, S32"""
+    x = _prep_x(x)
+    timestamp = x[:, 0]
+    step_distance_observed = x[:, 3]
+
+    num_samples = 1000  # TODO! 5000 as original ... or less?
+    N = len(timestamp)
+    from_samples = np.random.choice(N, num_samples, replace=True)
+    to_samples = np.random.choice(N, num_samples, replace=True)
+
+    delta_t = np.abs(timestamp[from_samples] - timestamp[to_samples])
+
+    dist_cum = np.zeros(num_samples)
+    for i in range(num_samples):
+        if from_samples[i] < to_samples[i]:
+            idx = np.arange(from_samples[i], to_samples[i]+1)
+        else:
+            idx = np.arange(from_samples[i], to_samples[i]-1, -1)
+        dist_cum[i] = np.nansum(step_distance_observed[idx])
+
     quantiles = [.1, .9]
     ss12 = np.array([])  # TODO? slight different results... maybe solver?
     for quantile in quantiles:
@@ -295,79 +370,42 @@ def summary_stats(*x):
         qrm = qr.fit(delta_t.reshape(-1, 1), dist_cum)
         ss12 = np.concatenate((ss12, np.array([qrm.intercept_]), qrm.coef_))
         # TODO! CHECK AGAIN ON S17 ... ie. .9 the intercept... changed alpha
-    
     ss12[2]  = np.log(ss12[2])
-    # TODO?: DIFFERENT SCALE AGAIN
-    # TODO? S_18 log...
-    ssx = np.append(ssx, ss12)
 
-    # TODO: VERY DIFFERENT SCALES AGAIN...
-    # distance cumulative moments
-    ss13 = np.nanquantile(dist_cum, [.1, .9])
-    ss14 = np.nanquantile(dist_dir, [.1, .9])
+    cum_dist_quantiles = np.nanquantile(dist_cum, [.1, .9])
 
-    ssx = np.append(ssx, ss13)
-    ssx = np.append(ssx, ss14)
+    cum_dist_skewness = np.log(skew(dist_cum, nan_policy='omit'))  # TODO: summary shape
+    if not np.isfinite(cum_dist_skewness):
+        cum_dist_skewness = -1e+6
 
-    # NOTE: added log transform
-    ss15 = np.log(skew(dist_cum, nan_policy='omit'))  # TODO: summary shape
+    cum_dist_sum = np.nansum(dist_cum)
+
+    return np.array([*ss12, cum_dist_sum,
+                     cum_dist_quantiles[0], cum_dist_quantiles[1],
+                     cum_dist_skewness, cum_dist_sum])
+
+
+def direct_distance_summaries(*x):
+    """SS26, 27, 29, 33"""
+    x = _prep_x(x)
+    timestamp = x[:, 0]
+    x_observed = x[:, 1]
+    y_observed = x[:, 2]
+
+    num_samples = 1000  # TODO! 5000 as original ... or less?
+    N = len(timestamp)
+    from_samples = np.random.choice(N, num_samples, replace=True)
+    to_samples = np.random.choice(N, num_samples, replace=True)
+
+    dist_dir = np.sqrt((x_observed[to_samples] - x_observed[from_samples])**2 +
+                       (y_observed[to_samples] - y_observed[from_samples])**2)
+
+    ss14 = np.log(np.nanquantile(dist_dir, [.1, .9]) + 1e-6)  # add small value to avoid log(0)
+
     ss16 = skew(dist_dir, nan_policy='omit')  # TODO: summary shape
 
-    ssx = np.append(ssx, ss15)
-    ssx = np.append(ssx, ss16)
-
-    # extent of movement for max effort
-    # NOTE: added log transform
-    # ss17 = np.log(max(x_observed) - min(x_observed)) * (max(y_observed) - min(y_observed))
-
-    # NOTE: S_26
-    # ssx = np.append(ssx, ss17)  # TODO: SUMMARY DISTRIBUTION
-
-    # cumulative step distance
-    ss18 = np.nansum(step_distance_observed)
-    ss19 = np.nansum(dist_cum)
     ss20 = np.log(np.nansum(dist_dir))  # TODO: ADDED LOG TRANSFORM
 
-    # TODO: different scales...
-    ssx = np.append(ssx, ss18)
-    ssx = np.append(ssx, ss19)
-    ssx = np.append(ssx, ss20)  # TODO?: maybe bad distribution
-
-    # convex hull area
-    X = np.column_stack((x_observed, y_observed))
-    try:
-        hull = ConvexHull(points=X)
-        ss21 = hull.volume
-    except Exception as e:
-        print("Hull error: ", e)
-        ss21 = -1e+6
-    ssx = np.append(ssx, ss21)  # TODO? maybe bad distribution
-
-    # cluster in distance matrix
-    dd = np.zeros((N, N))
-    # TODO? for loops probably slow...
-    for i in range(N):
-        for j in range(N):
-            # x1 = x_observed[i]
-            # y1 = y_observed[i]
-            x = np.array([x_observed[i], y_observed[i]])
-            y = np.array([x_observed[j], y_observed[j]])
-            dd[i,j] = np.sqrt(np.sum((x - y) ** 2))
-            # dd[i, j] = np.linalg.norm(x, y)
-
-    # dd = pdist(X)
-    hist = np.histogram(dd, bins=int(N/2))
-    ss22 = np.std(hist[0])
-    # number of peaks in the histogram
-    # ss23 = np.sum(np.diff(np.sign(np.diff(hist[0]))) == -2)
-
-    ssx = np.append(ssx, ss22)
-
-    # NOTE: S_32 here
-    # ssx = np.append(ssx, ss23)  # TODO: QUESTIONABLE SUMMARY DISTRIBUTION
-
-    # quant regression...
-    # TODO! REMOVED ! TIME CONSUMING AND CAUSED ISSUES... CONSIDER BACK IN LATER
     # quantiles = [.1, .8, .9]
     # ss24 = np.array([])  # TODO: some different results... maybe solver?
     # for quantile in quantiles:
@@ -377,55 +415,81 @@ def summary_stats(*x):
     #     ss24 = np.concatenate((ss24, np.array([qrm.intercept_]), np.log(qrm.coef_)))  # NOTE: add log trans
     #     # TODO! - MISTAKENLY USED ss12 for same summary...
 
-    # # TODO: VERY DIFFERENT AGAIN
-    # ssx = np.append(ssx, ss24)  # TODO: re-added .9 quantile for testing
-    # ssx[40] = ss24[4]  # TODO: REMOVED CAUSED VERY BAD SHAPE
-    # ssx[41] = ss24[5]
+
+    return np.array([ss14[0], ss14[1], ss16, ss20])
+
+
+def histogram_summaries(*x):
+    """S35, 36"""
+    x = _prep_x(x)
+    timestamp = x[:, 0]
+    x_observed = x[:, 1]
+    y_observed = x[:, 2]
+    N = len(timestamp)
+    dd = np.zeros((N, N))
+    # TODO? for loops probably slow...
+    for i in range(N):
+        for j in range(N):
+            # x1 = x_observed[i]
+            # y1 = y_observed[i]
+            x = np.array([x_observed[i], y_observed[i]])
+            y = np.array([x_observed[j], y_observed[j]])
+            dd[i, j] = np.sqrt(np.sum((x - y) ** 2))
+
+    hist = np.histogram(dd, bins=int(N/2))
+    bin_counts_stdev = np.std(hist[0])
+    # number of peaks in the histogram
+    num_peaks = np.sum(np.diff(np.sign(np.diff(hist[0]))) == -2)
+
+    return np.array([bin_counts_stdev, num_peaks])
+
+
+def rsc_summaries(*x):
+    "S43-49"  # TODO! RECHECK ADDITIONAL SUMMARIES
+    x = _prep_x(x)
+    habitat_suitability_observed = x[:, 5]
+    rsc = x[:, 6]
 
     # skewness of habitat suitability
-    # ss25 = skew(habitat_suitability_observed, nan_policy='omit')
-    # ssx[42] = ss25  # TODO: REMOVED BAD DISTRIBUTION
+    hs_skew = skew(habitat_suitability_observed, nan_policy='omit')
 
     # resource selection function
-    ss26 = np.nanmean(rsc)
-    # ss27 = np.nanstd(rsc)  # TODO: BAD DISTRIBUTION - LOG?
-    # ss28 = np.nanquantile(rsc, [.1, .2, .8, .9])
+    rsc_mean = np.log(np.nanmean(rsc))
+    rsc_std = np.log(np.nanstd(rsc))
+    rsc_quantiles = np.log(np.nanquantile(rsc, [.1, .2, .8, .9]))
+    if not np.isfinite(rsc_quantiles[0]):
+        rsc_quantiles[0] = -1e+6
 
-    ssx = np.append(ssx, ss26)
-    # ssx = np.append(ssx, ss27)
-    # ssx[45] = ss28[0]
-    # ssx[46] = ss28[1]
-    # ssx[47] = ss28[2]
-    # ssx[48] = ss28[3]
-
-    return ssx
+    return np.array([hs_skew, rsc_mean, rsc_std,
+                     rsc_quantiles[0], rsc_quantiles[1],
+                     rsc_quantiles[2], rsc_quantiles[3]])
 
 
-def summary_stats_batch(sims):
-    # columns 0 - timestamp, 1 - xObserved, 2 - yObserved,
-    # 3 - stepDistanceObserved, 4 - turningAngleObserved,
-    # 5 - habitatSuitabilityObserved, 6 - rsc
-    batch_size = len(sims)
-    full_size = 31
-    subset_size = 16
-    ssx_all = np.zeros((batch_size, subset_size))  # TODO: BAD MAGIC NUMBER
+def convex_hull_summary(*x):
+    """S34"""
+    x = _prep_x(x)
+    x_observed = x[:, 1]
+    y_observed = x[:, 2]
+    # convex hull area
+    X = np.column_stack((x_observed, y_observed))
+    try:
+        hull = ConvexHull(points=X)
+        ss21 = hull.volume
+    except Exception as e:
+        print("Hull error: ", e)
+        ss21 = -1e+6
 
-    for ii, x in enumerate(sims):
-
-        # ssx_all[ii, :] = summary_stats(x)
-        ssx_all[ii, :] = summary_stats_subset(x)
-        # print('ii: ', str(ssx_all[ii, :]))
-    return ssx_all
+    return np.array([np.log(ss21)])
 
 
 def simulation_function(*inputs, **kwinputs):
     inputs, kwinputs = prepare_inputs(*inputs, **kwinputs)
     res = invoke_simulation(*inputs, **kwinputs)
-    res = process_result(res, *inputs, **kwinputs)
     return res
 
 
-def get_model(true_params=None, seed_obs=None, upper_left=None, observed=False):
+def get_model(true_params=None, seed_obs=None, upper_left=None,
+              observed=False, individual_info=None):
     """Return the model in ..."""
     # NOTE: default params arbitrarily chosen
     rho = 2.0
@@ -441,12 +505,17 @@ def get_model(true_params=None, seed_obs=None, upper_left=None, observed=False):
 
     data = load_and_process_data("habitatSuitability_scaled_20.tif")
 
+
+    if individual_info is None:
+        individual_info = "2011VA0533"
+
     sim_fn = simulation_function
-    sim_fn = partial(sim_fn, environment_c=data)
-    summary_fn = summary_stats_batch
+    sim_fn = partial(sim_fn, environment_c=data, individual_info=individual_info)
 
     if observed:
-        y = pd.read_csv("individual_data/individual_data/calibration_2011VA0533_data.csv",
+        ind_filename = "individual_data/individual_data/calibration_" + \
+            individual_info + "_data.csv"
+        y = pd.read_csv(ind_filename,
                         header=None,
                         names=["timestamp", "xObserved", "yObserved",
                                "stepDistanceObserved", "tuningAngleObserved",
@@ -470,8 +539,23 @@ def get_model(true_params=None, seed_obs=None, upper_left=None, observed=False):
     # m['OWL'].uses_meta = True
 
     # Summary
-    elfi.Summary(summary_fn, m['OWL'], name='S')
+    summ = elfi.Summary(summary_stats_batch, m['OWL'], name='S')
+    # sumstats = []
 
-    elfi.Distance('euclidean', m['S'], name='d')
-    elfi.AdaptiveDistance('euclidean', m['S'], name='d_adapt')
+    # sumstats.append(elfi.Summary(habitat_suitability_summaries_batch, m['OWL'], name='hs_S'))
+    # sumstats.append(elfi.Summary(linear_reg_summaries_batch, m['OWL'], name='lr_S'))
+    # sumstats.append(elfi.Summary(short_step_summaries_batch, m['OWL'], name='short_step_S'))
+    # sumstats.append(elfi.Summary(start_end_distance_batch, m['OWL'], name='start_end_S'))
+    # sumstats.append(elfi.Summary(cumulative_distance_summaries_batch, m['OWL'], name='cum_dist_S'))
+    # sumstats.append(elfi.Summary(direct_distance_summaries_batch, m['OWL'], name='dir_dist_S'))
+    # sumstats.append(elfi.Summary(convex_hull_summary_batch, m['OWL'], name='convex_hull_S'))
+    # sumstats.append(elfi.Summary(histogram_summaries_batch, m['OWL'], name='hist_S'))
+    # sumstats.append(elfi.Summary(rsc_summaries_batch, m['OWL'], name='rsc_S'))
+
+    # with open("owl_inv_cov_mat.pkl", "rb") as f:
+    #     VI = pkl.load(f)
+
+    # d = elfi.Distance('euclidean', m['S'], name='d')
+    # elfi.Distance('mahalanobis', m['S'], name='d', VI=VI)
+    elfi.AdaptiveDistance(summ, name='d_adapt')
     return m
