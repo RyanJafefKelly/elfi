@@ -8,6 +8,7 @@ from elfi.clients.multiprocessing import Client as MultiprocessingClient
 from ctypes import cdll
 import multiprocessing as mp
 import pickle as pkl
+from elfi.examples.owl import summary_stats
 
 # import rasterio
 import pandas as pd
@@ -34,16 +35,16 @@ def run_owl():
     ind_data_centroid = pd.read_csv("individual_data/individual_data/calibration_2011VA0533_centroid.csv")
 
     # true_params = np.array([2, 1.5, 1, 5])  # TODO
-    elfi.set_client(MultiprocessingClient(num_processes=2))
+    elfi.set_client(MultiprocessingClient(num_processes=4))
 
-    m = owl.get_model(seed_obs=123, observed=True)
-
+    m = owl.get_model(seed_obs=123, observed=False)
+    observed_summaries = summary_stats(m.observed['OWL'])
     # rej = elfi.Rejection(m['d'], batch_size=1, seed=123)
     # schedule = [2.0e+3, 5e+2, 1e+2]
-    smc_abc = elfi.AdaptiveThresholdSMC(m['d'], batch_size=1, seed=123, q_threshold=0.95)
+    smc_abc = elfi.AdaptiveThresholdSMC(m['d'], batch_size=1, seed=123, q_threshold=0.99)
 
     tic = time.time()
-    sample_smc_abc = smc_abc.sample(100, max_iter=2)
+    sample_smc_abc = smc_abc.sample(300, max_iter=3)
     toc = time.time()
     print("SMC ABC sampling time: ", toc - tic)
     print(sample_smc_abc)

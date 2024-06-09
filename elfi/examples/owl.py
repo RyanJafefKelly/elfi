@@ -22,7 +22,7 @@ def load_and_process_data(filepath):
     data = np.zeros((15092, 16730))
     i = 0
     with rasterio.open(filepath) as src:
-        print(src.profile)
+        # print(src.profile)
         for ji, window in src.block_windows(1):
             window_data = src.read(window=window)
             window_data[np.where(window_data < 0)] = 0
@@ -148,7 +148,7 @@ def invoke_simulation(*inputs, **kwinputs):
     batch_size = kwinputs['batch_size']
     random_state = np.random
 
-    print(', '.join(['{}={!r}'.format(k, v) for k, v in kwinputs.items()]))
+    # print(', '.join(['{}={!r}'.format(k, v) for k, v in kwinputs.items()]))
 
     # Prepare the result array
     result_size = 2048  # Must match the expected size
@@ -161,7 +161,7 @@ def invoke_simulation(*inputs, **kwinputs):
             seed = random_state.integers(low=0, high=1e+9)
         else:
             seed = random_state.randint(0, 1e+9)
-        print(f"seed: {seed}")
+        # print(f"seed: {seed}")
         _ = lib.run_sim_wrapper(ctypes.c_double(rho), ctypes.c_double(k), ctypes.c_double(tau),
                         ctypes.c_double(lmda_r), env_res, ctypes.c_double(s_time), s_day,
                         ctypes.c_double(sol_lat), ctypes.c_double(sol_long),
@@ -176,27 +176,36 @@ def invoke_simulation(*inputs, **kwinputs):
         # np_res = np_res.reshape((-1, 7))
         np_res = result_np[:(7 * len(times))]  # trim down from 2048 to actual data
         np_res = np_res.reshape((-1, 7))
-        print("np_res ", np_res)
+        # print("np_res ", np_res)
         res_all.append(np_res)
     
     return res_all
 
 
+def summary_stats_subset(sim):
+    # TODO! BAD HACK TO CHECKOUT RESULTS QUICKLY
+    full_summaries = summary_stats(sim)
+    good_idx = [2, 3, 4, 5, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28]
+    return full_summaries[good_idx]
+
+
+
 def summary_stats(*x):
+    # TODO! CLEANUP SUMMARIES
     """Calculate the summary statistics for the owl data."""
     if np.allclose(x, 1):  # Something gone wrong...
         return -1.0 * np.ones(31)
     x = np.squeeze(np.array(x)).reshape((-1, 7))
-    print('x shape: ', x.shape)
+    # print('x shape: ', x.shape)
     timestamp = x[:, 0]
     x_observed = x[:, 1]
     y_observed = x[:, 2]
-    print('x_observed: ', str(x_observed))
+    # print('x_observed: ', str(x_observed))
     step_distance_observed = x[:, 3]
     turning_angle_observed = x[:, 4]
     habitat_suitability_observed = x[:, 5]
     rsc = x[:, 6]
-    print('step_distance_observed: ', str(step_distance_observed))
+    # print('step_distance_observed: ', str(step_distance_observed))
 
     ssx = np.array([])  # TODO: magic
 
@@ -397,12 +406,15 @@ def summary_stats_batch(sims):
     # 3 - stepDistanceObserved, 4 - turningAngleObserved,
     # 5 - habitatSuitabilityObserved, 6 - rsc
     batch_size = len(sims)
-    ssx_all = np.zeros((batch_size, 31))  # TODO: BAD MAGIC NUMBER
+    full_size = 31
+    subset_size = 16
+    ssx_all = np.zeros((batch_size, subset_size))  # TODO: BAD MAGIC NUMBER
 
     for ii, x in enumerate(sims):
 
-        ssx_all[ii, :] = summary_stats(x)
-        print('ii: ', str(ssx_all[ii, :]))
+        # ssx_all[ii, :] = summary_stats(x)
+        ssx_all[ii, :] = summary_stats_subset(x)
+        # print('ii: ', str(ssx_all[ii, :]))
     return ssx_all
 
 
@@ -416,10 +428,11 @@ def simulation_function(*inputs, **kwinputs):
 def get_model(true_params=None, seed_obs=None, upper_left=None, observed=False):
     """Return the model in ..."""
     # NOTE: default params arbitrarily chosen
-    rho = 2
+    rho = 2.0
+    # rho = 1.0
     k = 1.5
-    tau = 1
-    lmda_r = 5
+    tau = 1.0
+    lmda_r = 5.0
     if true_params is None:
         true_params = [k, lmda_r, rho, tau]
 

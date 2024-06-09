@@ -48,6 +48,11 @@ def run_owl():
     lmda_r = 5.0
     params = {'k': k, 'lmda_r': lmda_r, 'rho': rho, 'tau': tau}
 
+    nsim = 10000
+    pre_sample_methods.plot_features(m, params, nsim, feature_names, seed=123)
+    plt.savefig("owl_features.png")
+
+
     mcmc_iterations = 20  # sample size
     logit_transform_bound = np.array([
                                     [0.1, 4],  # k
