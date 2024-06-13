@@ -49,9 +49,9 @@ def gaussian_copula_density(rho_hat, u, whitening=None, eta_cov=None):
     try:
         mat = np.linalg.inv(rho_hat)
         if whitening is None:
-            mat = np.subtract(np.linalg.inv(rho), np.eye(dim))
+            mat = np.subtract(np.linalg.inv(rho_hat), np.eye(rho_hat))
         else:
-            mat = np.linalg.inv(rho)
+            mat = np.linalg.inv(rho_hat)
     except np.linalg.LinAlgError:
         logger.warning('Unable to invert rho, the estimated correlation matrix'
                        'for the simulated summaries.')
