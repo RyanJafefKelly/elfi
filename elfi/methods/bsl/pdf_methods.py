@@ -223,7 +223,11 @@ def semi_param_kernel_estimate(ssx, ssy, shrinkage=None, penalty=None, whitening
 
         # NOTE: bw_method - "silverman" is being used here is slightly
         #       different than "nrd0" - silverman's rule of thumb in R.
-        kernel = ss.gaussian_kde(ssx_j, bw_method="silverman")
+        try:
+            kernel = ss.gaussian_kde(ssx_j, bw_method="silverman")
+        except np.linalg.LinAlgError:
+            logger.warning('data appears to lie in a lower-dimensional subspace of the space.')
+            return np.array([-np.inf])
         logpdf_y[j] = kernel.logpdf(y)
 
         y_u[j] = kernel.integrate_box_1d(np.NINF, y)

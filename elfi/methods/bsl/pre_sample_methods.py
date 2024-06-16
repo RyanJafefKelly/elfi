@@ -87,7 +87,7 @@ def plot_covariance_matrix(model, theta, n_sim, feature_names, corr=False,
 
     sample_cov = np.cov(ssx_arr, rowvar=False)
     if corr:
-        sample_cov = np.corrcoef(sample_cov)  # correlation matrix
+        sample_cov = np.corrcoef(ssx_arr, rowvar=False)  # correlation matrix  # TODO! BUG FIX - CHECK IF NEEDED ELFI main
     if precision:
         sample_cov = np.linalg.inv(sample_cov)
 
@@ -140,8 +140,23 @@ def log_SL_stdev(model, theta, n_sim, feature_names, likelihood=None, M=20, seed
         ssx_arr = batch_to_arr2d(ssx, feature_names)
         for n_i, n in enumerate(n_sim):
             ll[n_i, i] = likelihood(ssx_arr[:n], observed)
-    return np.std(ll, axis=1)
+            if np.abs(ll[n_i, i]) >= 1e6:
+                for j in range(ssx_arr.shape[1]):
+                    plt.hist(ssx_arr[:n, j], bins=30)
+                    plt.plot(observed[0, j], 0, 'ro')
+                    plt.savefig("ssx_arr_" + str(j) + ".pdf")
+                    plt.clf()
+            print("ll: ", ll[n_i, i])
+            print("test")
 
+    # trim bad ll values
+    finite_ll_list = [ll[i, np.isfinite(ll[i, :])] for i in range(len(n_sim))]
+
+    stds = [np.std(finite_ll) for finite_ll in finite_ll_list]
+
+    if np.sum(~np.isfinite(ll)) > 0:
+        print("Warning: Ignoring -inf values in calculations")
+    return stds
 
 def estimate_whitening_matrix(model, n_sim, theta, feature_names, likelihood_type="standard",
                               seed=None):

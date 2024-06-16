@@ -1,15 +1,20 @@
-"""Little owls..
+"""Python interface for the Hauenstein little owl simulator.
 
 References
 ----------
-# TODO - add references
-
+Hauenstein, S., J. Fattebert, M. U. Grüebler, B. Naef-Daenzer, G. Pe'er,
+and F. Hartig. 2019.
+Calibrating an individual-based movement model to predict functional
+connectivity for little owls.
+Ecological Applications 29(4):e01873. https://doi.org/10.1002/eap.1873
 """
 
 import copy
 import ctypes
+import platform
 import uuid
 from functools import partial
+import time
 
 import numpy as np
 import pandas as pd
@@ -33,7 +38,7 @@ def load_and_process_data(filepath):
         for ji, window in src.block_windows(1):
             window_data = src.read(window=window)
             window_data[np.where(window_data < 0)] = 0
-            data[:, i] = window_data.flatten()
+            data[:, i] = copy.copy(window_data.flatten())
             i += 1
     return data
 
@@ -52,7 +57,7 @@ def prepare_inputs(**kwinputs):
         seed = random_state.integers(low=0, high=1e9)
     except AttributeError:
         random_state = np.random
-        seed = random_state.randint(1e9)
+        seed = random_state.randint(1e+9)
 
     kwinputs["seed"] = seed
     individual_info = kwinputs["individual_info"]
@@ -125,9 +130,14 @@ def invoke_simulation(k, lmda_r, rho, tau, **kwinputs):
 
     References: # TODO
     """
-    lib = ctypes.cdll.LoadLibrary(
-        "./librunsim.dylib"
-    )  # TODO: set .so or .dylib depending on mac vs HPC
+    # Determine the extension based on the operating system
+    if platform.system() == 'Darwin':  # macOS
+        lib = ctypes.cdll.LoadLibrary("./librunsim.dylib")
+    elif platform.system() == 'Linux':  # Linux/HPC
+        lib = ctypes.cdll.LoadLibrary("./librunsim.so")
+    else:
+        raise OSError("Unsupported platform")
+
     lib.run_sim_wrapper.restype = ctypes.c_int
 
     env_res = 20
@@ -195,8 +205,8 @@ def invoke_simulation(k, lmda_r, rho, tau, **kwinputs):
 
 def _prep_x(x):
     num_items = 7
-    if np.allclose(x, 1):  # Something gone wrong...  # TODO: check if still need?
-        return -1.0 * np.ones(31)
+    # if np.allclose(x, 1):  # Something gone wrong...  # TODO: check if still need?
+    #     return -1.0 * np.ones(31)
     x = np.squeeze(np.array(x)).reshape((-1, num_items))
     return x
 
@@ -207,7 +217,7 @@ def summary_stats_batch(sims):
     For more details see Appendix S3. # TODO
     """
     batch_size = len(sims)
-    num_summaries = 42  # TODO? magic number
+    num_summaries = 36  # TODO? magic number...currently for full summaries
     ssx_all = np.zeros((batch_size, num_summaries))
     for ii, sim in enumerate(sims):
         ssx = []
@@ -218,12 +228,16 @@ def summary_stats_batch(sims):
         ssx.append(cumulative_distance_summaries(sim))
         ssx.append(direct_distance_summaries(sim))
         ssx.append(convex_hull_summary(sim))
-        ssx.append(histogram_summaries(sim))
+        # ssx.append(histogram_summaries(sim))
         ssx.append(rsc_summaries(sim))
         ssx_all[ii, :] = np.concatenate(ssx)
 
     # set any not finite values to -1e+6
-    ssx_all[~np.isfinite(ssx_all)] = -1e6
+    ssx_all[~np.isfinite(ssx_all)] = -1e+6
+    shorten_idx_test = [0, 6, 18, 20, 24, 26, 28, 30, 31, 32, 35]  # TODO: stop calculating if actually improves
+    ssx_all = np.delete(ssx_all, shorten_idx_test, axis=1)
+    shorten_idx_corr = [5, 6, 12, 13, 17, 19, 21]
+    ssx_all = np.delete(ssx_all, shorten_idx_corr, axis=1)
     return ssx_all
 
 
@@ -339,16 +353,16 @@ def cumulative_distance_summaries(*x):
             idx = np.arange(from_samples[i], to_samples[i] - 1, -1)
         dist_cum[i] = np.nansum(step_distance_observed[idx])
 
-    quantiles = [0.1, 0.9]
-    ss12 = np.array([])  # TODO? slight different results... maybe solver?
-    for quantile in quantiles:
-        qr = QuantileRegressor(quantile=quantile, alpha=0, solver="highs")
+    # quantiles = [0.1, 0.9]
+    # ss12 = np.array([])  # TODO? slight different results... maybe solver?
+    # # TODO: MAY REMOVE TO SAVE TIME ... 0.04s / simulation
+    # for quantile in quantiles:
+    #     qr = QuantileRegressor(quantile=quantile, alpha=0, solver="highs")
 
-        qrm = qr.fit(delta_t.reshape(-1, 1), dist_cum)
-        ss12 = np.concatenate((ss12, np.array([qrm.intercept_]), qrm.coef_))
-        # TODO! CHECK AGAIN ON S17 ... ie. .9 the intercept... changed alpha
-    ss12[2] = np.log(ss12[2])
-
+    #     qrm = qr.fit(delta_t.reshape(-1, 1), dist_cum)
+    #     ss12 = np.concatenate((ss12, np.array([qrm.intercept_]), qrm.coef_))
+    #     # TODO! CHECK AGAIN ON S17 ... ie. .9 the intercept... changed alpha
+    # ss12[2] = np.log(ss12[2])
     cum_dist_quantiles = np.nanquantile(dist_cum, [0.1, 0.9])
 
     cum_dist_skewness = np.log(skew(dist_cum, nan_policy="omit"))  # TODO: summary shape
@@ -359,7 +373,7 @@ def cumulative_distance_summaries(*x):
 
     return np.array(
         [
-            *ss12,
+            # *ss12,
             cum_dist_sum,
             cum_dist_quantiles[0],
             cum_dist_quantiles[1],
@@ -393,8 +407,10 @@ def direct_distance_summaries(*x):
 
     ss20 = np.log(np.nansum(dist_dir))  # TODO: ADDED LOG TRANSFORM
 
+    # TODO: commented out as poor distribution of summaries for BSL
     # quantiles = [0.1, 0.8, 0.9]
-    # ss24 = np.array([])  # TODO: some different results... maybe solver?
+    # ss24 = np.array([])
+    # delta_t = np.abs(timestamp[from_samples] - timestamp[to_samples])
     # for quantile in quantiles:
     #     # TODO? check alpha = 0 vs 1
     #     qr = QuantileRegressor(quantile=quantile, alpha=0, solver="highs")
@@ -402,7 +418,7 @@ def direct_distance_summaries(*x):
     #     ss24 = np.concatenate(
     #         (ss24, np.array([qrm.intercept_]), np.log(qrm.coef_))
     #     )  # NOTE: add log trans
-    # #     # TODO! - MISTAKENLY USED ss12 for same summary...
+    # #
 
     return np.array([ss14[0], ss14[1], ss16, ss20])
 
@@ -416,6 +432,8 @@ def histogram_summaries(*x):
     N = len(timestamp)
     dd = np.zeros((N, N))
     # TODO? for loops probably slow...
+    # TODO: SPEED UP OR REMOVE
+    # TODO: CURRENTLY 0.04 s / simulation
     for i in range(N):
         for j in range(N):
             # x1 = x_observed[i]
@@ -428,7 +446,6 @@ def histogram_summaries(*x):
     bin_counts_stdev = np.std(hist[0])
     # number of peaks in the histogram
     num_peaks = np.sum(np.diff(np.sign(np.diff(hist[0]))) == -2)
-
     return np.array([bin_counts_stdev, num_peaks])
 
 
@@ -484,6 +501,15 @@ def simulation_function(rho, k, tau, lmda_r, batch_size=1, **kwinputs):
     num_items = 7
     parameters = [rho, k, tau, lmda_r]
     rho, k, tau, lmda_r = (np.atleast_1d(param) for param in parameters)
+
+    # TODO? hack fix ... weird call from plot_features w/ BSL ... could investigate
+    if len(rho) == 1 and batch_size > 1:
+        rho = np.repeat(rho, batch_size)
+        k = np.repeat(k, batch_size)
+        tau = np.repeat(tau, batch_size)
+        lmda_r = np.repeat(lmda_r, batch_size)
+        # ass
+    rho = np.repeat(rho, batch_size)
     # inputs = np.atleast_2d(inputs)
     res_all = np.empty((batch_size, 79, num_items))
     # ugly but should probably just use batch_size=1 as simulation in C++\
